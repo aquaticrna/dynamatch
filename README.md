@@ -1,3 +1,22 @@
+
+# Dynamatch?
+
+This is a (WIP) fork of the `defun` Clojure(script) library designed to allow for multimethod style extension
+of match functions.
+Right now there's some bare bones functionality in the `(comment ...)` block of `src/defun.cljc`.
+Still need to write `defun` and `addmatch` macros compatible with this...
+Also, probably very innefficient right now, and will need to do some work to get recursion to work properly.
+Macros are hard...
+
+Still hopefully this is the start of something really cool.
+May merge to defun if things look good.
+Or may leave as separate fork.
+We'll see.
+
+All below is original README
+
+</br>
+
 # defun
 
 A macro to define clojure functions with pattern matching just as erlang or elixir.
