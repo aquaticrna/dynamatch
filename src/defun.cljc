@@ -104,6 +104,73 @@
   (new-mf 8)
   (new-mf :this))
 
+(defmacro fun
+  "Defines a function just like clojure.core/fn with parameter pattern matching
+  See https://github.com/killme2008/defun for details."
+  [& sigs]
+  {:forms '[(fun name? [params* ] exprs*) (fun name? ([params* ] exprs*)+)]}
+  ;; Would be nice to be able to actually use name... For now we're just throwing away
+  (let [name (when (symbol? (first sigs)) (first sigs))
+        sigs (if name (next sigs) sigs)
+        sigs (if (vector? (first sigs))
+               (list sigs)
+               (if (seq? (first sigs))
+                 sigs
+                 ;; Assume single arity syntax
+                 (throw (IllegalArgumentException.
+                         (if (seq sigs)
+                           (str "Parameter declaration "
+                                (first sigs)
+                                " should be a vector")
+                           (str "Parameter declaration missing"))))))
+        sigs (postwalk
+              (fn [form]
+                (if (and (list? form) (= 'recur (first form)))
+                  (list 'recur (cons 'vector (next form)))
+                  form))
+              sigs)
+        sigs (mapcat
+               (fn [[m & more]]
+                 [m (cons 'do more)])
+               sigs)
+        form (list `match-fn (list `quote sigs))]
+    (println form)
+    form))
+
+(defmacro defun
+  "Define a function just like clojure.core/defn, but using core.match to
+  match parameters. See https://github.com/killme2008/defun for details."
+  [name & fdecl]
+  (let [[name body] (name-with-attributes name fdecl)
+        body (if (vector? (first body))
+               (list body)
+               body)
+        name (vary-meta name assoc :argslist (list 'quote (@#'clojure.core/sigs body)))]
+    `(def ~name (fun ~@body))))
+
+
+;; Now time to add our add-match macro
+
+(defmacro addmatch
+  [matchfn-var-sym pattern & match-forms]
+  (list `alter-var-root
+        (list `var matchfn-var-sym)
+        update-clauses
+        conj
+        (list `quote (list pattern (cons `do match-forms)))))
+
+(comment
+  (defun star
+    ([:this] :that)
+    ([x] (* x 4)))
+  (macroexpand (fun ([:this] :that)))
+  (star :this)
+  (star 7)
+  (addmatch star [:whatevs] :poop-butt)
+  #_(poop))
+
+
+
 
 ;#?(:clj
    ;(defmacro if-cljs
