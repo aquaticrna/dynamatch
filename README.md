@@ -27,6 +27,8 @@ It will likely be most tenable when you expect that a single consumer in a singl
 
 This is pretty inefficient right now, as we're compiling the match form and evaluating it on every function call.
 
+Clojurescript support is also currently broken till I fix the macro layout to be cljs compatible.
+
 Also recur will likely not work as expected; hopefully we can get that eventually.
 
 
