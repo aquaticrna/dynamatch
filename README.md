@@ -1,19 +1,43 @@
 
 # Dynamatch?
 
-This is a (WIP) fork of the `defun` Clojure(script) library designed to allow for multimethod style extension
-of match functions.
-Right now there's some bare bones functionality in the `(comment ...)` block of `src/defun.cljc`.
-Still need to write `defun` and `addmatch` macros compatible with this...
-Also, probably very innefficient right now, and will need to do some work to get recursion to work properly.
-Macros are hard...
+This is a (WIP) fork of the `defun` Clojure(script) library designed to allow for multimethod style extension of match functions.
+The `defun` macro should work more or less the same as the original `defun` (or eventually should anyway).
+Additionally, there is a `addmatch` macro that lets you add matches to the front of the match stack.
+Eventually, it should be possible to add at the end, and ideally anywhere in the stack.
 
-Still hopefully this is the start of something really cool.
-May merge to defun if things look good.
-Or may leave as separate fork.
-We'll see.
 
-All below is original README
+## The big challenge
+
+This system of extensible pattern matching has some pretty major issues.
+The semantics of multimethod dispatch are always quite clear and well defined.
+Pattern matching, however, depends on clause order.
+This is generally fine for co-located definitions, but as soon as you try to pull them apart and make things extensible, you open up a can of worms.
+The order in which you call `addmatch` can affect the resulting function you're trying to define.
+And the semantics of how you'd add the equivalent of a "default" match are unclear, since there might already be a "catch all" somewhere in the match stack.
+
+I think some of this problem can be solved by adding keyword identities to match clauses.
+This would ensure that once a clause had been defined for a given keyword identity, any changes to it would be made in place, not at the top of the clause stack.
+This avoids some of the issues of what order things load in and how you'd override/update an existing clause in the stack.
+However, a lot of problems still remain, and I don't think this is functionality that will ever be as general and extensible as multimethod dispatch.
+It will likely be most tenable when you expect that a single consumer in a single namespace will be overriding some predefined match funs.
+
+
+## Some other things:
+
+This is pretty inefficient right now, as we're compiling the match form and evaluating it on every function call.
+
+Also recur will likely not work as expected; hopefully we can get that eventually.
+
+
+## That's all
+
+Will try to add more later, but for now, below is original README.
+
+Enjoy,
+
+Chris Small
+
 
 </br>
 
