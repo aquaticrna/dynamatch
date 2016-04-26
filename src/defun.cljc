@@ -1,8 +1,8 @@
 ;(ns
-    ;^{:author "dennis <killme2008@gmail.com>"
+    ;^{:author "Chris Small <metasoarous@gmail.com>"
       ;:doc "A macro to define clojure functions with parameter pattern matching
-            ;just like erlang or elixir based on core.match. Please see
-            ;https://github.com/killme2008/defun"}
+            ;based on core.match, but with multimethod-like extensibility. Please see
+            ;https://github.com/metasoarous/defun"}
   ;defun
   ;(:require #?(:clj [clojure.core.match]
                ;:cljs [cljs.core.match :include-macros true])
@@ -15,49 +15,26 @@
             [clojure.walk :refer [postwalk]]))
 
 
-
 (defprotocol UpdatableClauses
+  "A protocol which abstracts the ability to update a clause list based on an update function and an args collection seq.
+  Note that the update-clauses fn is not part of the public api, but is an implementation detail; use update-clauses instead."
   (update-clauses- [this update-fn args]))
 
-
-(defn clauses-match-fn
+(defn- clauses-match-fn
+  "Construct a match function from sequence of clauses, as you'd pass to `clojure.core.match/match`. This function is not
+  part of the public API."
   [clauses]
-  ;(when-not (vector? vars)
-    ;[(vector vars)
-     ;(mapcat (fn [[c a]]
-               ;[(if (not= c :else) (vector c) c) a])
-       ;(partition 2 clauses)))])]
-  ;; This is terrible... ideally, we'd be able to compile the forms outside the function. But my macro-foo is
-  ;; too weak-sauce... :-( Need to be able to bind the args...
+  ;; This is terrible for perf... ideally, we'd be able to compile the forms outside the function. But not sure how to
+  ;; do that while leaving the args variable unbound...
   (fn [& args]
     (eval (core.match/clj-form (vec args) clauses))))
 
 
-;(defn fun*
-  ;"Defines a function just like clojure.core/fn with parameter pattern matching
-  ;See https://github.com/killme2008/defun for details."
-  ;[name-sym sigs]
-  ;{:forms '[(fun name? [params* ] exprs*) (fun name? ([params* ] exprs*)+)]}
-  ;(let [name (when (symbol? name-sym) name-sym)
-        ;sigs (postwalk
-              ;(fn [form]
-                ;(if (and (list? form) (= 'recur (first form)))
-                  ;(list 'recur (cons 'vector (next form)))
-                  ;form))
-              ;sigs)
-        ;sigs `([& args#]
-               ;(match (vec args#)
-                      ;~@(mapcat
-                         ;(fn [[m & more]]
-                           ;[m (cons 'do more)])
-                         ;sigs)))]
-    ;(list* 'fn (if name
-                 ;(cons name sigs)
-                 ;sigs))))
-
+;; Declare our constructor so we can call it in our type definition
 (declare match-fn)
 
 (deftype MatchFn [clauses matchfn]
+  ;; Ye old pyramid of invoke
   ;#?(:clj clojure.lang.IFn :cljs IFn)
   clojure.lang.IFn
   (invoke [this]
@@ -82,31 +59,37 @@
     (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9))
   (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10]
     (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10))
+  (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11]
+    (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11))
+  (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12]
+    (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12))
+  (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13]
+    (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13))
+  (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14]
+    (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14))
+  (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14 arg15]
+    (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14 arg15))
+  (invoke [this arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14 arg15 arg16]
+    (matchfn arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14 arg15 arg16))
   UpdatableClauses
   (update-clauses- [this update-fn args]
     (let [new-clauses (apply update-fn clauses args)]
       (match-fn new-clauses))))
 
 (defn update-clauses
+  "Update the cluases of a dynamic match fun by applying update-fn to the clauses list, along with any additional args."
   [match-fn update-fn & args]
   (update-clauses- match-fn update-fn args))
 
+;; Should push down clauses as a list of lists further through the stack since it is semantically clearer and
+;; gives us more extensibility
 (defn match-fn
+  "Create a new match fn object based on a list of clauses. Implementation detail; not part of the public API."
   [clauses]
   (MatchFn. clauses (clauses-match-fn clauses)))
 
-
-(comment
-  (def mf (match-fn '([:this] :that [x] (* 3 x))))
-  (mf 8)
-  (mf :this)
-  (def new-mf (update-clauses mf (fn [clauses] (concat '([y] (* 999 y)) clauses))))
-  (new-mf 8)
-  (new-mf :this))
-
 (defmacro fun
-  "Defines a function just like clojure.core/fn with parameter pattern matching
-  See https://github.com/killme2008/defun for details."
+  "Defines a function just like clojure.core/fn with parameter pattern matching and extensibility."
   [& sigs]
   {:forms '[(fun name? [params* ] exprs*) (fun name? ([params* ] exprs*)+)]}
   ;; Would be nice to be able to actually use name... For now we're just throwing away
@@ -134,7 +117,6 @@
                  [m (cons 'do more)])
                sigs)
         form (list `match-fn (list `quote sigs))]
-    (println form)
     form))
 
 (defmacro defun
@@ -151,84 +133,64 @@
 
 ;; Now time to add our add-match macro
 
+(defn prepend-clauses
+  [clauses new-clauses]
+  (concat new-clauses clauses))
+
 (defmacro addmatch
-  [matchfn-var-sym pattern & match-forms]
-  (list `alter-var-root
-        (list `var matchfn-var-sym)
-        update-clauses
-        conj
-        (list `quote (list pattern (cons `do match-forms)))))
+  ([matchfn-var-sym pattern & match-forms]
+   (list `alter-var-root
+         (list `var matchfn-var-sym)
+         `update-clauses
+         `prepend-clauses
+         (list `quote (list pattern (cons `do match-forms))))))
+
+(defmacro addmatches
+  ([matchfn-var-sym & new-clauses]
+   (list `alter-var-root
+         (list `var matchfn-var-sym)
+         `update-clauses
+         `prepend-clause
+         (list `quote (->> new-clauses
+                           (mapcat (fn [[pattern & match-forms]] [pattern (cons `do match-forms)])))))))
+
+
+;; Need to define a macro for overriding a given pattern match based on a keyword identifier (like :default)
+(declare setmatch)
 
 (comment
   (defun star
     ([:this] :that)
     ([x] (* x 4)))
-  (macroexpand (fun ([:this] :that)))
   (star :this)
   (star 7)
   (addmatch star [:whatevs] :poop-butt)
+  (star :whatevs)
+  (map first (partition 2 (.clauses star)))
+  (addmatches star
+    ([:shifty] :shiner)
+    ([:butt-butt] (println "Go dooger") :houser))
+  (map first (partition 2 (.clauses star)))
+  (star :shifty)
+  (star :butt-butt)
   #_(poop))
 
 
+;; Would be nice to add letfun and defun-, as below
 
-
+;; Will this work as is?
 ;#?(:clj
-   ;(defmacro if-cljs
-     ;"Return then if we are generating cljs code and else for clj code.
-     ;Source:
-     ;http://blog.nberger.com.ar/blog/2015/09/18/more-portable-complex-macro-musing/"
-     ;[then else]
-     ;(if (boolean (:ns &env)) then else)))
+   (defmacro letfun
+     "letfn with parameter pattern matching."
+     {:forms '[(letfun [fnspecs*] exprs*)]}
+     [fnspecs & body]
+     `(letfn* ~(vec (interleave (map first fnspecs)
+                                (map #(cons `fun %) fnspecs)))
+              ~@body))
 
-;#?(:clj
-   ;(defmacro match
-     ;[& args]
-     ;`(if-cljs (cljs.core.match/match ~@args)
-               ;(clojure.core.match/match ~@args))))
 
-;#?(:clj
-   ;(defmacro fun
-     ;"Defines a function just like clojure.core/fn with parameter pattern matching
-     ;See https://github.com/killme2008/defun for details."
-     ;[& sigs]
-     ;{:forms '[(fun name? [params* ] exprs*) (fun name? ([params* ] exprs*)+)]}
-     ;(let [name (when (symbol? (first sigs)) (first sigs))
-           ;sigs (if name (next sigs) sigs)
-           ;sigs (if (vector? (first sigs))
-                  ;(list sigs)
-                  ;(if (seq? (first sigs))
-                    ;sigs
-                    ;;; Assume single arity syntax
-                    ;(throw (IllegalArgumentException.
-                            ;(if (seq sigs)
-                              ;(str "Parameter declaration "
-                                   ;(first sigs)
-                                   ;" should be a vector")
-                              ;(str "Parameter declaration missing"))))))
-           ;sigs (postwalk
-                 ;(fn [form]
-                   ;(if (and (list? form) (= 'recur (first form)))
-                     ;(list 'recur (cons 'vector (next form)))
-                     ;form))
-                 ;sigs)
-           ;sigs `([& args#]
-                  ;(match (vec args#)
-                         ;~@(mapcat
-                            ;(fn [[m & more]]
-                              ;[m (cons 'do more)])
-                            ;sigs)))]
-       ;(list* 'fn (if name
-                    ;(cons name sigs)
-                    ;sigs)))))
-
-;#?(:clj
-   ;(defmacro letfun
-     ;"letfn with parameter pattern matching."
-     ;{:forms '[(letfun [fnspecs*] exprs*)]}
-     ;[fnspecs & body]
-     ;`(letfn* ~(vec (interleave (map first fnspecs)
-                                ;(map #(cons `fun %) fnspecs)))
-              ;~@body)))
+;(require '[clojure.test :as test])
+;(test/run-tests 'defun.core-test)
 
 ;#?(:clj
    ;(defmacro defun
