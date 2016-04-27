@@ -1,5 +1,4 @@
-(ns
-    ^{:author "Chris Small <metasoarous@gmail.com>"
+(ns ^{:author "Chris Small <metasoarous@gmail.com>"
       :doc "A macro to define clojure functions with parameter pattern matching
             based on core.match, but with multimethod-like extensibility. Please see
             https://github.com/metasoarous/defun"}
