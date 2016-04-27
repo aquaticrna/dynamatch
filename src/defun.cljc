@@ -4,51 +4,23 @@
             based on core.match, but with multimethod-like extensibility. Please see
             https://github.com/metasoarous/defun"}
   defun
-  (:require #?(:clj [clojure.core.match]
-               :cljs [cljs.core.match :include-macros true])
+  (:require #?(:clj [clojure.core.match :as core.match]
+               :cljs [cljs.core.match :as core.match :include-macros true])
             #?@(:clj [[clojure.tools.macro :refer [name-with-attributes]]
                       [clojure.walk :refer [postwalk]]]))
   #?(:cljs (:require-macros [defun :refer [fun letfun defun defun-]])))
-;(ns defun
-  ;(:require [clojure.core.match :as core.match]
-            ;[clojure.tools.macro :refer [name-with-attributes]]
-            ;[clojure.walk :refer [postwalk]]))
+
+
+
+;; # The MatchFn type
+
+;; Our first goal is to create a type which wraps some dynamic set of match clause forms
 
 
 (defprotocol UpdatableClauses
   "A protocol which abstracts the ability to update a clause list based on an update function and an args collection seq.
   Note that the update-clauses fn is not part of the public api, but is an implementation detail; use update-clauses instead."
   (update-clauses- [this update-fn args]))
-
-(defn- clauses-match-fn
-  "Construct a match function from sequence of clauses, as you'd pass to `clojure.core.match/match`. This function is not
-  part of the public API."
-  [clauses]
-  ;; This is terrible for perf... ideally, we'd be able to compile the forms outside the function. But not sure how to
-  ;; do that while leaving the args variable unbound...
-  ;(fn [& args]
-    ;(eval (core.match/clj-form (vec args) clauses))))
-  (fn [& args]
-    (eval (core.match/clj-form [(vec args)] (mapcat (fn [[pattern match]] [[pattern] match])
-                                                    (partition 2 clauses))))))
-
-;(defmacro clauses-match-fn
-  ;"Construct a match function from sequence of clauses, as you'd pass to `clojure.core.match/match`. This function is not
-  ;part of the public API."
-  ;[clauses]
-  ;(let [args (gensym "args")]
-    ;`(fn [& ~args]
-       ;~(core.match/clj-form [[args]] (mapcat (fn [[pattern match]]
-                                                ;[[pattern] match])
-                                              ;(partition 2 clauses))))))
-
-
-;(macroexpand '(clauses-match-fn ([x] (* x 4) [x y] (* x y))))
-;(macroexpand '(clauses-match-fn ([:this] :that [x] (* x 4))))
-;(let [clauses '([x] (* x 3)
-                ;[y x] (* y x))]
-  ;(clauses-match-fn clauses))
-
 
 ;; Declare our constructor so we can call it in our type definition
 (declare match-fn)
@@ -99,6 +71,37 @@
   "Update the cluases of a dynamic match fun by applying update-fn to the clauses list, along with any additional args."
   [match-fn update-fn & args]
   (update-clauses- match-fn update-fn args))
+
+
+(defn rebind-var
+  [form new-var]
+  (let [[let-sym [bound-args-sym _] inner-form] form]
+    (list let-sym [bound-args-sym new-var] inner-form)))
+
+(defn clauses-match-fn
+  "Construct a match function from sequence of clauses, as you'd pass to `clojure.core.match/match`. This function is not
+  part of the public API."
+  ([clauses] (clauses-match-fn (gensym "some-random-matchfn") clauses))
+  ([fn-name clauses]
+   (let [args-sym (gensym "args")
+         compiled-expr (core.match/clj-form
+                         [[:defun/token]]
+                         (mapcat (fn [[pattern match]]
+                                   [[pattern] match])
+                           (partition 2 clauses)))
+         compiled-expr (rebind-var compiled-expr args-sym)
+         fn-def-form `(fn ~fn-name [& ~args-sym]
+                        (let [~args-sym (vec ~args-sym)]
+                          ~compiled-expr))]
+     (clojure.pprint/pprint fn-def-form)
+     (eval fn-def-form))))
+
+(comment
+  (let [clauses '([x] (* x 3)
+                  [y x] (* y x))
+        f (clauses-match-fn clauses)]
+    (f 3)))
+
 
 ;; Should push down clauses as a list of lists further through the stack since it is semantically clearer and
 ;; gives us more extensibility
@@ -212,8 +215,8 @@
               ~@body))
 
 
-(require '[clojure.test :as test])
-(test/run-tests 'defun.core-test)
+;(require '[clojure.test :as test])
+;(test/run-tests 'defun.core-test)
 
 ;#?(:clj
    ;(defmacro defun
