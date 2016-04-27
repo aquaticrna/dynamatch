@@ -26,11 +26,28 @@
   [clauses]
   ;; This is terrible for perf... ideally, we'd be able to compile the forms outside the function. But not sure how to
   ;; do that while leaving the args variable unbound...
-  (fn [& args]
-    (eval (core.match/clj-form (vec args) clauses))))
   ;(fn [& args]
-    ;(eval (core.match/clj-form [(vec args)] (mapcat (fn [[pattern match]] [[pattern] match])
-                                                    ;clauses)))))
+    ;(eval (core.match/clj-form (vec args) clauses))))
+  (fn [& args]
+    (eval (core.match/clj-form [(vec args)] (mapcat (fn [[pattern match]] [[pattern] match])
+                                                    (partition 2 clauses))))))
+
+;(defmacro clauses-match-fn
+  ;"Construct a match function from sequence of clauses, as you'd pass to `clojure.core.match/match`. This function is not
+  ;part of the public API."
+  ;[clauses]
+  ;(let [args (gensym "args")]
+    ;`(fn [& ~args]
+       ;~(core.match/clj-form [[args]] (mapcat (fn [[pattern match]]
+                                                ;[[pattern] match])
+                                              ;(partition 2 clauses))))))
+
+
+;(macroexpand '(clauses-match-fn ([x] (* x 4) [x y] (* x y))))
+;(macroexpand '(clauses-match-fn ([:this] :that [x] (* x 4))))
+;(let [clauses '([x] (* x 3)
+                ;[y x] (* y x))]
+  ;(clauses-match-fn clauses))
 
 
 ;; Declare our constructor so we can call it in our type definition
@@ -38,8 +55,7 @@
 
 (deftype MatchFn [clauses matchfn]
   ;; Ye old pyramid of invoke
-  ;#?(:clj clojure.lang.IFn :cljs IFn)
-  clojure.lang.IFn
+  #?(:clj clojure.lang.IFn :cljs IFn)
   (invoke [this]
     (matchfn))
   (invoke [this arg1]
@@ -114,6 +130,10 @@
                 (if (and (list? form) (= 'recur (first form)))
                   (list 'recur (cons 'vector (next form)))
                   form))
+              ;; Do we always need this? Need to think about it...
+              ;(fn [form]
+                ;(if (= 'recur (first form))
+                  ;(list 'recur (cons 'vector (next form)))))
               sigs)
         sigs (mapcat
                (fn [[m & more]]
@@ -131,7 +151,7 @@
                (list body)
                body)
         name (vary-meta name assoc :argslist (list 'quote (@#'clojure.core/sigs body)))]
-    `(def ~name (fun ~@body))))
+    `(do (declare ~name) (def ~name (fun ~@body)))))
 
 
 ;; Now time to add our add-match macro
