@@ -1,18 +1,18 @@
-;(ns
-    ;^{:author "Chris Small <metasoarous@gmail.com>"
-      ;:doc "A macro to define clojure functions with parameter pattern matching
-            ;based on core.match, but with multimethod-like extensibility. Please see
-            ;https://github.com/metasoarous/defun"}
-  ;defun
-  ;(:require #?(:clj [clojure.core.match]
-               ;:cljs [cljs.core.match :include-macros true])
-            ;#?@(:clj [[clojure.tools.macro :refer [name-with-attributes]]
-                      ;[clojure.walk :refer [postwalk]]]))
-  ;#?(:cljs (:require-macros [defun :refer [fun letfun defun defun-]])))
-(ns defun
-  (:require [clojure.core.match :as core.match]
-            [clojure.tools.macro :refer [name-with-attributes]]
-            [clojure.walk :refer [postwalk]]))
+(ns
+    ^{:author "Chris Small <metasoarous@gmail.com>"
+      :doc "A macro to define clojure functions with parameter pattern matching
+            based on core.match, but with multimethod-like extensibility. Please see
+            https://github.com/metasoarous/defun"}
+  defun
+  (:require #?(:clj [clojure.core.match]
+               :cljs [cljs.core.match :include-macros true])
+            #?@(:clj [[clojure.tools.macro :refer [name-with-attributes]]
+                      [clojure.walk :refer [postwalk]]]))
+  #?(:cljs (:require-macros [defun :refer [fun letfun defun defun-]])))
+;(ns defun
+  ;(:require [clojure.core.match :as core.match]
+            ;[clojure.tools.macro :refer [name-with-attributes]]
+            ;[clojure.walk :refer [postwalk]]))
 
 
 (defprotocol UpdatableClauses
@@ -28,6 +28,9 @@
   ;; do that while leaving the args variable unbound...
   (fn [& args]
     (eval (core.match/clj-form (vec args) clauses))))
+  ;(fn [& args]
+    ;(eval (core.match/clj-form [(vec args)] (mapcat (fn [[pattern match]] [[pattern] match])
+                                                    ;clauses)))))
 
 
 ;; Declare our constructor so we can call it in our type definition
@@ -150,7 +153,7 @@
    (list `alter-var-root
          (list `var matchfn-var-sym)
          `update-clauses
-         `prepend-clause
+         `prepend-clauses
          (list `quote (->> new-clauses
                            (mapcat (fn [[pattern & match-forms]] [pattern (cons `do match-forms)])))))))
 
@@ -189,8 +192,8 @@
               ~@body))
 
 
-;(require '[clojure.test :as test])
-;(test/run-tests 'defun.core-test)
+(require '[clojure.test :as test])
+(test/run-tests 'defun.core-test)
 
 ;#?(:clj
    ;(defmacro defun

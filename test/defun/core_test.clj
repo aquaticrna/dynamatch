@@ -81,11 +81,11 @@
       ([([1 2 nil nil nil] :seq)] :a2))
     (is (= :a2 (test2 [1 2 nil nil nil])))))
 
-(deftest test-private-macro
-  (testing "private macro"
-    (defun- test1
-      ([_]))
-    (is (:private (meta #'test1)))))
+;(deftest test-private-macro
+  ;(testing "private macro"
+    ;(defun- test1
+      ;([_]))
+    ;(is (:private (meta #'test1)))))
 
 (deftest side-effects
   (testing "site-effects"
@@ -120,23 +120,58 @@
                  ([[1 2 3]] :a2))
                 [1 2 3])))))
 
-(deftest test-letfun
-  (testing "letfun"
-    (letfun [(twice [x]
-                    (* x 2))
-             (six-times [y]
-                        (* (twice y) 3))
-             (accum
-              ([0 ret] ret)
-              ([n ret] (recur (dec n) (+ n ret)))
-              ([n] (recur n 0)))]
-            (is (= 30 (twice 15)))
-            (is (= 90) (six-times 15))
-            (is (= 5050 (accum 100))))
-    (is (nil? (resolve 'six-times)))
-    (is (nil? (resolve 'twice)))
-    (is (nil? (resolve 'accum)))
-    (letfun [(test3 ([[_ _ 2]] :a0)
-                    ([[1 1 3]] :a1)
-                    ([[1 2 3]] :a2))]
-            (is (= :a2) (test3 [1 2 3])))))
+;(deftest test-letfun
+  ;(testing "letfun"
+    ;(letfun [(twice [x]
+                    ;(* x 2))
+             ;(six-times [y]
+                        ;(* (twice y) 3))
+             ;(accum
+              ;([0 ret] ret)
+              ;([n ret] (recur (dec n) (+ n ret)))
+              ;([n] (recur n 0)))]
+            ;(is (= 30 (twice 15)))
+            ;(is (= 90) (six-times 15))
+            ;(is (= 5050 (accum 100))))
+    ;(is (nil? (resolve 'six-times)))
+    ;(is (nil? (resolve 'twice)))
+    ;(is (nil? (resolve 'accum)))
+    ;(letfun [(test3 ([[_ _ 2]] :a0)
+                    ;([[1 1 3]] :a1)
+                    ;([[1 2 3]] :a2))]
+            ;(is (= :a2) (test3 [1 2 3])))))
+
+(deftest test-addmatch
+  (testing "say-hi"
+    (defun say-hi
+      "Say hi to people."
+      ([:dennis] "Hi,good morning, dennis.")
+      ([:catty] "Hi, catty, what time is it?")
+      ([:green] "Hi,green, what a good day!")
+      ([other] (str "Say hi to " other)))
+    (addmatch say-hi
+      [:bob-jones] "Welcome to bob jones university")
+    (is (= "Hi,good morning, dennis." (say-hi :dennis)))
+    (is (= "Hi, catty, what time is it?" (say-hi :catty)))
+    (is (= "Hi,green, what a good day!" (say-hi :green)))
+    (is (= "Say hi to someone" (say-hi "someone")))
+    (is (= "Welcome to bob jones university" (say-hi :bob-jones)))))
+
+(deftest test-addmatches
+  (testing "say-hi"
+    (defun say-hi
+      "Say hi to people."
+      ([:dennis] "Hi,good morning, dennis.")
+      ([:catty] "Hi, catty, what time is it?")
+      ([:green] "Hi,green, what a good day!")
+      ([other] (str "Say hi to " other)))
+    (addmatches say-hi
+      ([:bob-jones] "Welcome to bob jones university")
+      ([:jo-bobbers] "You are the villain here!"))
+    (is (= "Hi,good morning, dennis." (say-hi :dennis)))
+    (is (= "Hi, catty, what time is it?" (say-hi :catty)))
+    (is (= "Hi,green, what a good day!" (say-hi :green)))
+    (is (= "Say hi to someone" (say-hi "someone")))
+    (is (= "Welcome to bob jones university" (say-hi :bob-jones)))
+    (is (= "You are the villain here!" (say-hi :jo-bobbers)))))
+
