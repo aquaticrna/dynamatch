@@ -215,7 +215,7 @@
                (list body)
                body)
         name (vary-meta name assoc :argslist (list 'quote (@#'clojure.core/sigs body)))]
-    `(do (declare ~name) (def ~name (fun ~@body)))))
+    `(do (declare ~name) (def ~name (fun ~name ~@body)))))
 
 ;; Now our extensibility macros
 
