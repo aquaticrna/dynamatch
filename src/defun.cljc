@@ -47,7 +47,7 @@
 
 ;; Now we can actually define our `MatchFn` type
 
-(deftype MatchFn [clauses matchfn]
+(deftype MatchFn [name clauses matchfn]
   ;; Ye old pyramid of invoke
   #?(:clj clojure.lang.IFn :cljs IFn)
   (invoke [this]
@@ -87,7 +87,7 @@
   UpdatableClauses
   (update-clauses- [this update-fn args]
     (let [new-clauses (apply update-fn clauses args)]
-      (match-fn new-clauses))))
+      (match-fn name new-clauses))))
 
 
 ;; Our public API shouldn't include this update-clauses- implementation, so we'll wrap it in the following
@@ -149,8 +149,8 @@
 ;; gives us more extensibility
 (defn match-fn
   "Create a new match fn object based on a list of clauses. Implementation detail; not part of the public API."
-  [clauses]
-  (MatchFn. clauses (clauses-match-fn clauses)))
+  [name clauses]
+  (MatchFn. name clauses (clauses-match-fn name clauses)))
 
 
 
@@ -198,8 +198,11 @@
                (fn [[m & more]]
                  [m (cons 'do more)])
                sigs)
-        form (list `match-fn (list `quote sigs))]
+        form `(match-fn '~(or name (gensym "fun")) '~sigs)]
+    ;(clojure.pprint/pprint form)
     form))
+
+;((fun testerer ([x] (* x 3))) 5)
 
 ;; Next, we have `defun`, which should mirror clojure's `defn` by defining a var which points to a `fun`
 
