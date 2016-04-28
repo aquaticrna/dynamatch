@@ -1,6 +1,6 @@
-(ns defun.core-test
+(ns dynamatch.core-test
   (:require [clojure.test :refer :all]
-            [defun :refer :all]))
+            [dynamatch :refer :all]))
 
 (deftest test-defun-square
   (testing "Normal function."

@@ -2,7 +2,7 @@
       :doc "A macro to define clojure functions with parameter pattern matching
             based on core.match, but with multimethod-like extensibility. Please see
             https://github.com/metasoarous/defun"}
-  defun
+  dynamatch
   (:require #?(:clj [clojure.core.match :as core.match]
                :cljs [cljs.core.match :as core.match :include-macros true])
             #?@(:clj [[clojure.tools.macro :refer [name-with-attributes]]
@@ -243,6 +243,7 @@
 
 
 ;; XXX TODO Need to define a macro for overriding a given pattern match based on a keyword identifier (like :default)
+;; Update; actually maybe we don't need this if we're using the semantic of using idents keywords to refer to things
 (declare setmatch)
 
 ;; Some examples testing these things out:
