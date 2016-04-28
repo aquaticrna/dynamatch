@@ -228,19 +228,19 @@
 (defmacro addmatch
   ([matchfn-var-sym pattern & match-forms]
    `(alter-var-root
-         (var ~matchfn-var-sym)
-         update-clauses
-         prepend-clauses
-         (quote (~pattern (do ~@match-forms))))))
+      (var ~matchfn-var-sym)
+      update-clauses
+      prepend-clauses
+      (quote (~pattern (do ~@match-forms))))))
 
 (defmacro addmatches
   ([matchfn-var-sym & new-clauses]
    `(alter-var-root
-         (var ~matchfn-var-sym)
-         update-clauses
-         prepend-clauses
-         (quote ~(->> new-clauses
-                           (mapcat (fn [[pattern & match-forms]] [pattern `(do ~@match-forms)])))))))
+      (var ~matchfn-var-sym)
+      update-clauses
+      prepend-clauses
+      (quote ~(mapcat (fn [[pattern & match-forms]] [pattern `(do ~@match-forms)])
+                      new-clauses)))))
 
 
 ;; XXX TODO Need to define a macro for overriding a given pattern match based on a keyword identifier (like :default)
