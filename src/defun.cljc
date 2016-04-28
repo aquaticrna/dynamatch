@@ -223,9 +223,7 @@
   [clauses new-clauses]
   (concat new-clauses clauses))
 
-;; XXX TODO Should rewrite these using syntax quote...
-
-(defmacro addmatch
+(defmacro addmatch!
   ([matchfn-var-sym pattern & match-forms]
    `(alter-var-root
       (var ~matchfn-var-sym)
@@ -233,7 +231,8 @@
       prepend-clauses
       (quote (~pattern (do ~@match-forms))))))
 
-(defmacro addmatches
+
+(defmacro addmatches!
   ([matchfn-var-sym & new-clauses]
    `(alter-var-root
       (var ~matchfn-var-sym)
@@ -254,10 +253,10 @@
     ([x] (* x 4)))
   (star :this)
   (star 7)
-  (addmatch star [:whatevs] :poop-butt)
+  (addmatch! star [:whatevs] :poop-butt)
   (star :whatevs)
   (map first (partition 2 (.clauses star)))
-  (addmatches star
+  (addmatches! star
     ([:shifty] :shiner)
     ([:butt-butt] (println "Go dooger") :houser))
   (map first (partition 2 (.clauses star)))
