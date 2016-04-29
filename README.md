@@ -120,9 +120,11 @@ We present the following features:
 
 To deal with the semantic complexity arising from clause-order dependence, we specifically have the following:
 
-* Match clauses (which take the form `([& pattern] & forms)`) can accept metadata with particular note being paid to the `:ident` attribute, which can be used to refer to a specific clause programmatically.
-* Re-evaluation of impure macros `defun`, `addmatches` and `addmatch!` update in-place the corresponding clauses (by `:ident`).
+* Soon: Match clauses (which take the form `([& pattern] & forms)`) can accept metadata with particular note being paid to the `:ident` attribute, which can be used to refer to a specific clause programmatically.
+* Soon: Re-valuation of impure macros `defun`, `addmatches` and `addmatch!` update in-place the corresponding clauses (by `:ident`).
+* Soon: Blocks of matches added via `addmatches` should "stick together" in the compiled matrix, meaning that once we've added a series of addmatches pattern submatrices, those submatrices will always and forever be contiguous, and can be internally reordered.
 
+Together these features mean that once we perform the initial compilation of the order of the addmatches submatrices, we are more or less immune to ordering problems.
 
 <br/>
 
@@ -203,10 +205,10 @@ Copyright © 2016 [Christopher Small](https://github.com/metasoarous)
 
 Distributed under the Eclipse Public License either version 1.0 or (at your option) any later version.
 
-
-
 <br/>
 <br/>
+
+
 
 # Below is the origin defun Readme
 
