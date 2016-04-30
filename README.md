@@ -210,7 +210,7 @@ Distributed under the Eclipse Public License either version 1.0 or (at your opti
 
 
 
-# Below is the origin defun Readme
+# Below is the original defun Readme
 
 
 # defun
