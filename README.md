@@ -8,7 +8,7 @@ Betwixt pattern matching and the multimethod
 
 ## Problem Statement
 
-What is the simplest way to construct a mapping from `data` to `other-data` (possibly with side effects) such that we can dynamically extend the mapping to respond to some specified class of input data in some way?
+What is the simplest way to construct a mapping between two classes of data such that we can dynamically extend the mapping to respond to some specified class of input data in some way?
 In particular, how do we do this while maximizing flexibility in how we describe these classes of data, while maintaining semantic clarity with respect to building predictable, modular systems?
 
 This library is an attempt to solve this problem through a dynamically dispatched pattern matching functions.
@@ -116,37 +116,51 @@ We present the following features:
 * `defun`: Create a var referencing a `MatchFn` function object defined by pattern matching dispatch a la the `defun` library.
 * `addmatches!` and `addmatch!`: Add matches to an existing `MatchFn`, with semantics for adding to the beginning, or end of the match/clause matrix.
 * `update-clauses`: Low level ability to atomically update the match/clause matrix via an arbitrary update function mapping the existing clause matrix to some new clause matrix.
-* `merge-funs`: Take two `MatchFn` functions and merge their clauses.
+* `merge-funs` (soon): Take two `MatchFn` functions and merge their clauses.
 
 To deal with the semantic complexity arising from clause-order dependence, we specifically have the following:
 
-* Soon: Match clauses (which take the form `([& pattern] & forms)`) can accept metadata with particular note being paid to the `:ident` attribute, which can be used to refer to a specific clause programmatically.
-* Soon: Re-valuation of impure macros `defun`, `addmatches` and `addmatch!` update in-place the corresponding clauses (by `:ident`).
-* Soon: Blocks of matches added via `addmatches` should "stick together" in the compiled matrix, meaning that once we've added a series of addmatches pattern submatrices, those submatrices will always and forever be contiguous, and can be internally reordered.
+* (soon) Match clauses (which take the form `([& pattern] & forms)`) can accept metadata with particular note being paid to the `:dynamatch/ident` attribute, which can be used to refer to a specific clause programmatically.
+* (soon) Re-valuation of impure macros `defun`, `addmatches` and `addmatch!` update in-place the corresponding clauses (by `:dynamatch/ident`).
+* (soon) Each block of clauses added via `addmatches` should behave as a contiguous submatrix of the overall matrix, and has an explicit ordering in relation to the other submatrices, which, once set remains fixed upon form re-evaluation, but can be inspected and updated.
+* (soon) Special treatment of defaults (mappings with `:dynamatch/ident :dynamatch/default`), such that adding to the end of a match function adds just before the `:default`.
+    * We could even catch some class of patterns that we know statically will match all values and prevent them from being assigned when there is a default
 
-Together these features mean that once we perform the initial compilation of the order of the addmatches submatrices, we are more or less immune to ordering problems.
+One nice feature here is that order _within_ submatrices becomes static, and due to fixed order of submatrices relative to each other, their re-evaluation is idempotent.
+This resolves many of the issues around order based semantics
+This means we can start to leverage the extensibility of pattern matching in a more dynamic setting.
+
+There is still of course inherent complexity in the language of pattern matching as far as order goes.
+It can be difficult to fully reason about the interrelation and behavior of an ordering of pattern submatrices.
+And there is still work in safely, sanely and repeatable specifying the order of matches.
+But this may be worth the price when extensible dispatching is needed, and this complexity may be unavoidable in meeting the problem in general.
+(I'd like to think more about the space of other possible solutions eventually...)
 
 <br/>
+
+
+## Problems
+
+How do clauses with the same ident in two different submatrices interact?
+Should they be dealt with in their appropriate submatrices?
+Error?
+What is the behavior here?
 
 
 ## Is this a good solution?
 
 I don't know.
 Maybe not.
-But I _do_ think it's a good _problem_.
+But I _do_ think it's a good _problem_, even if there isn't a good answer.
+This is the best solution I've come up with.
 Please share your thoughts and critiques.
-
-This is the best I've been able to come up with.
-I challenge you to come up with a better solution to the problem :-)
-
-What we have here solves most of the problems
 
 <br/>
 
 
 ## Current status
 
-Clojurescript support is also currently broken till I fix the macro layout to be cljs compatible.
+Clojurescript support is currently broken till I fix the macro layout to be cljs compatible.
 We also haven't yet implemented the matchset or clause idents and corresponding in place updates.
 
 <br/>
