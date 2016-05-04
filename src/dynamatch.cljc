@@ -418,7 +418,7 @@
      (let [y (* x y)]
        (println y)
        y)))
-  ;; Not that much extra noise if you need the idents
+  ;; Not that much extra noise if you don't need the idents
   (addmatches! thefn :some-block-name {:before :beginning}
     ([:this x]
      (let [x (* x 4)]
@@ -434,7 +434,8 @@
     ([x] (* x 4)))
   (star :this)
   (star 7)
-  (addmatch! star [:whatevs] :poop-butt)
+  (addmatch! star :whatevs-ident [:whatevs] :poop-butt)
+  (print-contigs star)
   (star :whatevs)
   (addmatches! star :shifty-butt-butt-matches
     ([:shifty] :shiner)
@@ -460,7 +461,7 @@
 ;; Uncomment if you'd like to run tests
 
 ;(require '[clojure.test :as test])
-;(test/run-tests 'defun.core-test)
+;(test/run-tests 'dynamatch.core-test)
 
 
 ;; Copied over from original defun for reference in development...
