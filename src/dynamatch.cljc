@@ -380,26 +380,6 @@
 
 ;; Next, we have `defun`, which should mirror clojure's `defn` by defining a var which points to a `fun`
 
-(defmacro defined?
-  [varname]
-  `(if-cljs
-     ;; This should be optimized for the cljs case (if possible) to test if varname is a var; tricky since
-     ;; cljs doesn't actually have vars... but what we want to know is if it was defined with def, really.
-     ;; Uhh... have to use reader conditional here to get it not to break on varname when trying to compile
-     ;; this form...
-     #?(:cljs (and ~varname (instance? MatchFn ~varname)) :clj ::brokerz?)
-     (and (resolve '~varname) (bound? instance? MatchFn ~varname))
-     (let [v# (def ~varname)]
-       (when-not (and (.hasRoot v#) (instance? MatchFn (deref v#)))
-         (def ~(with-meta mm-name m)
-              (new clojure.lang.MultiFn ~(name mm-name) ~dispatch-fn ~default ~hierarchy))))))
-
-;(clojure.pprint/pprint (macroexpand-1 '(defined? fsss)))
-;(resolve 'fsss)
-;(defined? fsss)
-;(defined? *)
-
-
 (defmacro defun
   "Define a function just like clojure.core/defn, but using core.match to
   match parameters. See https://github.com/killme2008/defun for details."
@@ -417,6 +397,7 @@
          (addmatches! ~name :dynamatch/main ~@body)
          (def ~name (fun ~name ~@body))))))
       ;; XXX TODO Might be a problem with this when you want to declare some fn before hand...
+
 
 ;(clojure.pprint/pprint (macroexpand '(defun thefun ([x] (* x 3)))))
 ;(defun thefun ([x] (* x 3)))
@@ -446,7 +427,7 @@
 #?(:clj
     (defmacro addmatch
       [matchfn block-ident pattern & match-forms]
-      `(addmatches ~matchfn ~block-ident ^{:ident ~block-ident} ~(cons pattern match-forms))))
+      `(addmatches ~matchfn ~block-ident ~(with-meta (cons pattern match-forms) {:ident block-ident}))))
 
 #?(:clj
     (defmacro addmatches!
