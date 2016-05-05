@@ -3,12 +3,76 @@
             based on core.match, but with multimethod-like extensibility. Please see
             https://github.com/metasoarous/defun"}
   dynamatch
+  #?(:clj (:refer-clojure :exclude [alter-var-root]))
   (:require #?(:clj [clojure.core.match :as core.match]
                :cljs [cljs.core.match :as core.match :include-macros true])
             #?@(:clj [[clojure.tools.macro :refer [name-with-attributes]]
                       [clojure.walk :refer [postwalk]]]))
-  #?(:cljs (:require-macros [defun :refer [fun letfun defun defun-]])))
+  #?(:cljs (:require-macros [defun :refer [fun letfun defun addmatches addmatches! addmatch addmatch!]])))
 
+
+;; A portable version of alter var root
+;; From https://gist.github.com/eyelidlessness/e760c5350b113a0bbcab
+;; Separate namespace?
+
+#?(:clj
+    (defmacro if-cljs
+      "Return then if we are generating cljs code and else for Clojure code.
+       http://blog.nberger.com.ar/blog/2015/09/18/more-portable-complex-macro-musing"
+      [then else]
+      (if (:ns &env) then else)))
+
+(def resolve-clj
+  (try clojure.core/resolve
+    (catch Exception _
+      (constantly nil))))
+
+(defmulti sym->var
+  (fn [env sym]
+    (cond
+      (contains? env sym) :clj
+      (resolve-clj sym) :clj-resolved
+      :else :cljs)))
+
+(defn meta->fq-sym [{:keys [ns name] :as m}]
+  (symbol (str (ns-name ns)) (str name)))
+
+(defmethod sym->var :clj [env sym]
+  (loop [init (-> env sym .-init)]
+    (cond
+      (instance? clojure.lang.Compiler$TheVarExpr init)
+      (-> init .-var meta meta->fq-sym)
+
+      (instance? clojure.lang.Compiler$LocalBindingExpr init)
+      (recur (-> init .-b .-init))
+
+      :default
+      nil)))
+
+(defmethod sym->var :clj-resolved [env sym]
+  (-> sym resolve meta meta->fq-sym))
+
+(defmethod sym->var :cljs [env sym]
+  (let [init (get-in env [:locals sym :init])
+        var-name (get-in init [:var :info :name])]
+      (cond
+        var-name var-name
+        (:form init) (recur (:env init) (:form init))
+        :else nil)))
+
+#?(:clj
+    (defmacro portable-alter-var-root [var-ref f]
+      (let [var-seq? (and (seq? var-ref) (= 'var (first var-ref)))
+            sym? (symbol? var-ref)
+            var-sym (cond
+                      var-seq? (second var-ref)
+                      sym? (sym->var &env var-ref)
+                      :else nil)]
+        (if (nil? var-sym)
+            `(throw (ex-info "Expected var" {:got ~var-ref}))
+            `(if-cljs
+               (set! ~var-sym (~f ~var-sym))
+               (clojure.core/alter-var-root (var ~var-sym) ~f))))))
 
 
 ;; # Dynamatch
@@ -46,7 +110,6 @@
 ;; To that end, here we have the `UpdatbleClauses` protocol:
 
 
-
 ;; Conceptual breakdown
 
 ;; * clause stack
@@ -63,7 +126,10 @@
   (update-contigs- [this update-fn args]
     "Updates clause contigs (stored as `{:keys [ident clauses]}` maps) vector based on an update-fn and optionally an args vector.")
   (set-default- [this clause]
-    "Sets the default clause in the stack (always at end of stack)."))
+    "Sets the default clause in the stack (always at end of stack).")
+  ;; This feels rather bad; need to think about what the right abstraction is here for this
+  (contigs- [this]
+    "The contiguous clause blocks for this clause stack"))
     
 
 ;; Next, we'll declare our constructor so we can call it in our type definition (so that we can compile a new
@@ -75,11 +141,11 @@
 
 (defn validate-clause-stacks!
   ([contigs]
-   (assert (apply distinct? (map :ident contigs))
+   (assert (apply distinct? :default (map :ident contigs))
            "Clause stack idents must be unique!")
-   (assert (apply distinct? (->> contigs
-                                 (mapcat (comp (partial map (comp :ident meta)) :clauses))
-                                 (remove nil?)))
+   (assert (apply distinct? :default (->> contigs
+                                          (mapcat (comp (partial map (comp :ident meta)) :clauses))
+                                          (remove nil?)))
            "Clause idents must be unique!")))
 
 (deftype MatchFn [name contigs default-clause matchfn]
@@ -125,7 +191,9 @@
       (validate-clause-stacks! new-contigs)
       (new-match-fn name new-contigs default-clause)))
   (set-default- [this new-default]
-    (new-match-fn name contigs new-default)))
+    (new-match-fn name contigs new-default))
+  (contigs- [this]
+    contigs))
 
 
 ;; Our public API shouldn't directly include these protocol functions, so we'll wrap it in the following
@@ -179,10 +247,10 @@
   "Doesn't actually run an update if the ident is already taken; instead updates in place."
   ([match-fn new-contig opts]
    ;; Hmm... should be in protocol?
-   (if-not ((set (map :ident (.contigs match-fn)))
+   (if-not ((set (map :ident (contigs- match-fn)))
             (:ident new-contig))
      (add-contig match-fn new-contig opts)
-     match-fn))
+     (set-contig match-fn new-contig)))
   ([match-fn new-contig]
    (add-or-set-contig match-fn new-contig {:after :end})))
 
@@ -212,7 +280,7 @@
   ([fn-name clauses]
    (let [args-sym (gensym "args")
          compiled-expr (core.match/clj-form
-                         [[:defun/token]]
+                         [[::compile-token]]
                          (mapcat (fn [[pattern & match]]
                                    [[pattern] (cons 'do match)])
                            clauses))
@@ -253,12 +321,10 @@
 
 (defn print-contigs
   [match-fn]
-  (let [contigs (.contigs match-fn)]
-    (doseq [{:keys [ident clauses]} contigs]
-      (println ident)
-      (doseq [c clauses]
-        (println "  " (:ident (meta c)) (first c))))))
-  ;(clojure.pprint/pprint (.contigs match-fn)))
+  (doseq [{:keys [ident clauses]} (contigs- match-fn)]
+    (println ident)
+    (doseq [c clauses]
+      (println "  " (:ident (meta c)) (first c)))))
 
 
 ;; ## Macros (proper API)
@@ -273,52 +339,66 @@
 ;; Our first macro, `fun`, will simple create a `MatchFn` instance based on a signature.
 ;; The goal is that it have exactly the same API as clojure's `fn`.
 
-(defmacro fun
-  "Defines a function just like clojure.core/fn with parameter pattern matching and extensibility."
-  [& sigs]
-  {:forms '[(fun name? [params* ] exprs*) (fun name? ([params* ] exprs*)+)]}
-  (let [name (when (symbol? (first sigs)) (first sigs))
-        sigs (if name (next sigs) sigs)
-        sigs (if (vector? (first sigs))
-               (list sigs)
-               (if (seq? (first sigs))
-                 sigs
-                 ;; Assume single arity syntax
-                 (throw (IllegalArgumentException.
-                         (if (seq sigs)
-                           (str "Parameter declaration "
-                                (first sigs)
-                                " should be a vector")
-                           (str "Parameter declaration missing"))))))
-        sigs (postwalk
-              (fn [form]
-                (if (and (list? form) (= 'recur (first form)))
-                  (list 'recur (cons 'vector (next form)))
-                  form))
-        ;; XXX TODO Need to clean up dead code and comments here...
-              ;; Do we always need this? Need to think about it...
-              ;(fn [form]
-                ;(if (= 'recur (first form))
-                  ;(list 'recur (cons 'vector (next form)))))
-              sigs)
-        ;; It might be better to do this step later on down the road to make things more uniform
-        ;; Shouldn't need this any more; doing at compile step
-        ;sigs (map
-               ;(fn [[m & more]]
-                 ;[m (cons 'do more)])
-               ;sigs)
-        ;; XXX Should add explicit syntax for some default clause
-        form `(new-match-fn '~(or name (gensym "fun")) [{:ident :dynamatch/main :clauses '~sigs}])]
-    ;(clojure.pprint/pprint form)
-    form))
+#?(:clj
+    (defmacro fun
+      "Defines a function just like clojure.core/fn with parameter pattern matching and extensibility."
+      [& sigs]
+      {:forms '[(fun name? [params* ] exprs*) (fun name? ([params* ] exprs*)+)]}
+      (let [orig-sigs sigs
+            name (when (symbol? (first sigs)) (first sigs))
+            sigs (if name (next sigs) sigs)
+            sigs (if (vector? (first sigs))
+                   (list sigs)
+                   (if (seq? (first sigs))
+                     sigs
+                     ;; Assume single arity syntax
+                     (throw (IllegalArgumentException.
+                             (if (seq sigs)
+                               (str "Parameter declaration "
+                                    (first sigs)
+                                    " should be a vector")
+                               (str "Parameter declaration missing"))))))
+            orig-sigs sigs
+            sigs (postwalk
+                  (fn [form]
+                    (if (and (list? form) (= 'recur (first form)))
+                      (list 'recur (cons 'vector (next form)))
+                      form))
+                  sigs)
+            ;; Fixing the metadata... I think the postwalk mucks this up; not sure why I need first below
+            ;; though... Was wrapping in an extra list form without...
+            sigs (first (map (fn [sig orig-sig] (with-meta sig (meta orig-sig)) sigs orig-sigs) sigs orig-sigs))
+            ;; XXX Should add explicit syntax for some default clause
+            form `(new-match-fn '~(or name (gensym "fun")) [{:ident :dynamatch/main :clauses '~sigs}])]
+        form)))
 
 
 (comment
-  ((fun testerer ([x] (* x 3))) 5)
-  (print-contigs (fun testerer ([x] (* x 3)))))
+  ((fun testerer ^{:this :that} ([x] (* x 3))) 5)
+  (print-contigs (fun testerer ^{:ident :this} ([x] (* x 3)))))
 
 
 ;; Next, we have `defun`, which should mirror clojure's `defn` by defining a var which points to a `fun`
+
+(defmacro defined?
+  [varname]
+  `(if-cljs
+     ;; This should be optimized for the cljs case (if possible) to test if varname is a var; tricky since
+     ;; cljs doesn't actually have vars... but what we want to know is if it was defined with def, really.
+     ;; Uhh... have to use reader conditional here to get it not to break on varname when trying to compile
+     ;; this form...
+     #?(:cljs (and ~varname (instance? MatchFn ~varname)) :clj ::brokerz?)
+     (and (resolve '~varname) (bound? instance? MatchFn ~varname))
+     (let [v# (def ~varname)]
+       (when-not (and (.hasRoot v#) (instance? MatchFn (deref v#)))
+         (def ~(with-meta mm-name m)
+              (new clojure.lang.MultiFn ~(name mm-name) ~dispatch-fn ~default ~hierarchy))))))
+
+;(clojure.pprint/pprint (macroexpand-1 '(defined? fsss)))
+;(resolve 'fsss)
+;(defined? fsss)
+;(defined? *)
+
 
 (defmacro defun
   "Define a function just like clojure.core/defn, but using core.match to
@@ -331,10 +411,16 @@
         name (vary-meta name assoc :argslist (list 'quote (@#'clojure.core/sigs body)))]
     ;; Attempting to update with defonce semantics; should only create the var if it doesn't exist, and if it does
     ;; update the clause set in place (with :dynamatch/main as the ident)
-    (if (resolve name)
+    `(do
+       (declare ~name)
+       (if (instance? MatchFn ~name)
+         (addmatches! ~name :dynamatch/main ~@body)
+         (def ~name (fun ~name ~@body))))))
       ;; XXX TODO Might be a problem with this when you want to declare some fn before hand...
-      `(addmatches! ~name :dynamatch/main ~@fdecl)
-      `(do (declare ~name) (def ~name (fun ~name ~@body))))))
+
+;(clojure.pprint/pprint (macroexpand '(defun thefun ([x] (* x 3)))))
+;(defun thefun ([x] (* x 3)))
+;(thefun 8)
 
 ;; Now our extensibility macros
 
@@ -342,35 +428,39 @@
   [clauses new-clauses]
   (concat new-clauses clauses))
 
-(defmacro set-default!
-  [matchfn-var-sym pattern & match-forms]
-  `(alter-var-root
-     (var ~matchfn-var-sym)
-     set-default
-     '~(cons pattern match-forms)))
+#?(:clj
+    (defmacro set-default!
+      [matchfn-var-sym pattern & match-forms]
+      `(portable-alter-var-root
+         ~matchfn-var-sym
+         set-default
+         '~(cons pattern match-forms))))
 
+#?(:clj
+    (defmacro addmatches
+      [matchfn block-ident & clauses]
+      (let [opts (when (map? (first clauses)) (first clauses))
+            clauses (if opts (next clauses) clauses)]
+        `(add-or-set-contig ~matchfn {:ident ~block-ident :clauses '~clauses} ~@(when opts [opts])))))
 
-(defmacro addmatches
-  [matchfn block-ident & clauses]
-  (let [opts (when (map? (first clauses)) (first clauses))
-        clauses (if opts (next clauses) clauses)]
-    `(add-or-set-contig ~matchfn {:ident ~block-ident :clauses '~clauses} ~@(when opts [opts]))))
+#?(:clj
+    (defmacro addmatch
+      [matchfn block-ident pattern & match-forms]
+      `(addmatches ~matchfn ~block-ident ^{:ident ~block-ident} ~(cons pattern match-forms))))
 
-(defmacro addmatch
-  [matchfn block-ident pattern & match-forms]
-  `(addmatches ~matchfn ~block-ident ^{:ident ~block-ident} ~(cons pattern match-forms)))
+#?(:clj
+    (defmacro addmatches!
+      ([matchfn-var-sym block-ident & new-clauses]
+       `(portable-alter-var-root
+          ~matchfn-var-sym
+          (fn [matchfn#] (addmatches matchfn# ~block-ident ~@new-clauses))))))
 
-(defmacro addmatches!
-  ([matchfn-var-sym block-ident & new-clauses]
-   `(alter-var-root
-      (var ~matchfn-var-sym)
-      (fn [matchfn#] (addmatches matchfn# ~block-ident ~@new-clauses)))))
-
-(defmacro addmatch!
-  ([matchfn-var-sym block-ident pattern & match-forms]
-   `(alter-var-root
-      (var ~matchfn-var-sym)
-      (fn [matchfn#] (addmatch matchfn# ~block-ident ~pattern ~@match-forms)))))
+#?(:clj
+    (defmacro addmatch!
+      ([matchfn-var-sym block-ident pattern & match-forms]
+       `(portable-alter-var-root
+          ~matchfn-var-sym
+          (fn [matchfn#] (addmatch matchfn# ~block-ident ~pattern ~@match-forms))))))
 
 
 ;(clojure.pprint/pprint (macroexpand '(set-default! varsym [x] (* x y) (println))))
@@ -394,7 +484,7 @@
   (ns-unmap *ns* 'thefun)
   (defun thefun
     ^{:ident :main-form}
-    [{:this :thing} x] (* x 333))
+    ([{:this :thing} x] (* x 333)))
   (thefun {:this :thing} 5)
   (print-contigs thefun)
   ;; Seems to be adding the clauses, but not on second addmatches! (where you might want to change the values
@@ -404,8 +494,8 @@
     ^{:ident :this-form} ([:this x] (* x 4))
     ^{:ident :something} ([x y]     (* x y)))
   ;; This one should 
-  (thefun {:this :thing} 5)
   (thefun 8 99)
+  (thefun {:this :thing} 5)
   ;; Longer form with idents; definitely some extra noise...
   (addmatches! thefun :some-block-name {:before :beginning}
     ^{:ident :this-form}
@@ -419,7 +509,7 @@
        (println y)
        y)))
   ;; Not that much extra noise if you don't need the idents
-  (addmatches! thefn :some-block-name {:before :beginning}
+  (addmatches! thefun :another-block-name {:after :end}
     ([:this x]
      (let [x (* x 4)]
        (println x)
@@ -429,15 +519,17 @@
        (println y)
        y)))
   ;; Testing out simpler api
+  (ns-unmap *ns* 'star)
   (defun star
     ([:this] :that)
     ([x] (* x 4)))
   (star :this)
   (star 7)
+  ;; This should add :whatevs-ident as a clause ident as well
   (addmatch! star :whatevs-ident [:whatevs] :poop-butt)
   (print-contigs star)
   (star :whatevs)
-  (addmatches! star :shifty-butt-butt-matches
+  (addmatches! star :shifty-butt-butt-matches {:before :beginning}
     ([:shifty] :shiner)
     ([:butt-butt] (println "Go dooger") :houser))
   (star :shifty)
@@ -448,39 +540,24 @@
 ;; Would be nice to add letfun and defun-, as below
 
 ;; Will this work as is?
-;#?(:clj
-   (defmacro letfun
-     "letfn with parameter pattern matching."
-     {:forms '[(letfun [fnspecs*] exprs*)]}
-     [fnspecs & body]
-     `(letfn* ~(vec (interleave (map first fnspecs)
-                                (map #(cons `fun %) fnspecs)))
-              ~@body))
-
-
-;; Uncomment if you'd like to run tests
-
-;(require '[clojure.test :as test])
-;(test/run-tests 'dynamatch.core-test)
-
-
-;; Copied over from original defun for reference in development...
-
-;#?(:clj
-   ;(defmacro defun
-     ;"Define a function just like clojure.core/defn, but using core.match to
-     ;match parameters. See https://github.com/killme2008/defun for details."
-     ;[name & fdecl]
-     ;(let [[name body] (name-with-attributes name fdecl)
-           ;body (if (vector? (first body))
-                  ;(list body)
-                  ;body)
-           ;name (vary-meta name assoc :argslist (list 'quote (@#'clojure.core/sigs body)))]
-       ;`(def ~name (fun ~@body)))))
+#?(:clj
+    (defmacro letfun
+      "letfn with parameter pattern matching."
+      {:forms '[(letfun [fnspecs*] exprs*)]}
+      [fnspecs & body]
+      `(letfn* ~(vec (interleave (map first fnspecs)
+                                 (map #(cons `fun %) fnspecs)))
+               ~@body)))
 
 ;#?(:clj
    ;(defmacro defun-
      ;"same as defun, yielding non-public def"
      ;[name & decls]
      ;(list* `defun (vary-meta name assoc :private true) decls)))
+
+;; Uncomment if you'd like to run tests
+
+;(require '[clojure.test :as test])
+;(test/run-tests 'dynamatch.core-test)
+
 
