@@ -6,193 +6,230 @@ Betwixt pattern matching and the multimethod
 <br/>
 
 
-## Problem Statement
+## Introduction
 
-What is the simplest way to construct a mapping between two classes of data such that we can dynamically extend the mapping to respond to some specified class of input data in some way?
-In particular, how do we do this while maximizing flexibility in how we describe these classes of data, while maintaining semantic clarity with respect to building predictable, modular systems?
+We'd like to be able to define pattern matching functions which have multimethod-like extensibility.
 
-This library is an attempt to solve this problem through a dynamically dispatched pattern matching functions.
-Feel free to skip to [Usage](#usage).
+Multimethods are wonderful, but they have a weakness:
+The dispatch function is fixed, meaning you cannot extend the semantics of how a multimethod dispatches.
 
+In contrast, pattern matching is immensely expressive with respect to how you describe what shapes of data should be treated a certain way.
+However, the problem with this flexibility is that it's possible to have distinct match patterns which match for overlapping data.
+As such, it's necessary that pattern matching respect clause order, so that order wins when multiple patterns match some input data.
+This order-dependence leads to significant complications in the semantics of how we'd extend such a function in a multimethod-like fashion.
 
-### Clojure offerings: multimethods and protocols
-
-Clojure offers us multimethods and protocols for doing extensible dynamic dispatch.
-But these unfortunately fall short of our goal.
-
-With multimethods, we can specify some function to compute a value on which to dispatch.
-However, the problem here is that if we didn't create the multimethod, we have no sane ability to extend the semantics of the dispatch function.
-However it dispatches, we have to live with it.
-
-With protocols, we have the ability to define and consume abstract APIs for some set of behavior (protocols) and build implementations of these protocols for our own or existing types.
-This is very powerful and meets a lot of our goals to some extent.
-However, the problem is that we are limited to data for which these protocols have been implemented: records, types or reified objects.
-This means we can't just throw any 'ol data at such a function; only data which has been wedged into one of the reificiations.
-This falls short of our flexibility and extensibility; we'd like to extend functionality to _any_ data.
-
-
-### Pattern matching
-
-Programming languages such as Haskell, ML, Erlang & Elixer have been built around pattern matching (to various degrees).
-The way in which they've built around pattern matching has greatly affected the style in which people tend to program in these languages.
-In particular, in these languages we often find functions defined based on pattern matching of the structure of their arguments.
-For an interesting talk about pattern matching in Clojure (as well as a history of how pattern matching evolved more generally), I'd direct you to [Pattern Matching in Clojure](https://www.youtube.com/watch?v=n7aE6k8o_BU), by Sean Johnson.
-
-Pattern matching solves part of our problem here.
-It particularly nails the problem of a flexible descriptive language around the class of data which should get matched.
-
-However, functions defined via pattern matching generally can not be extended outside of the context in which they are created (to my knowledge; please correct me if I'm wrong).
-This means they can't be used (as multimethods or protocols are) as a basis on which users of (e.g.) a library add to the behavior or capability of a system.
-
-
-### Extending pattern matching functions
-
-What if we could do this?
-What if we could _add_ matches dynamically to a function which dispatches on pattern matches?
-
-There is one major problem with this as I see it: clause order.
-Modularity is predicated on being able to break a problem into sub-problems, and think of them as more or less independent.
-This is difficult when order of execution matters in a non-trivial way.
-
-Multimethods are more or less independent of the order in which methods are defined [see aside].
-This is a part of what makes them so useful for defining extensible and modular systems.
-By not having to worry about order, users of an API can generally extend a multimethod without having to worry about how it will affect the rest of the system.
-That sort of an awkward thing to say, since it's really the fact that multimethods will only ever fire a default or a .
-When you define a multimethod, you generally either expand the class of data on which the multimethod operates, or change the behavior from the default for some class of data.
-As such, the order in which multimethods are added has no effect.
-It's an interesting question to ask what properties are necessary and sufficient for this kind of modularity.
-But it is certainly the case that if the order in which extensions are defined affects the behavior of the system, modularity must inherently be effected adversely, since you can't reason about the subsystems without considering their ordering within the greater system.
-
-[aside: Keyword inheritance softens this statement, but only somewhat, since in general the semantics of what's happening are still clear]
-
-However, multimethods still suffer from this problem, which is that you cannot extend the semantics of _how data is dispatched_.
-And this tradeoff sort of makes sense.
-For order not to matter, there have to be restrictions on the semantics of the manner in which we define classes.
-
-
-### Partitionability
-
-What we need is _partitionability_.
-
-A function naturally partitions a class of data into subclasses based on the return values.
-This partitionability is related to the order independence these semantics give us.
-
-With _fully static_ pattern matching, statics remove some of the burden of thinking about order; it's static.
-As long as you're looking at some static description of matches, and can statically reason about partitioning based on static ordering specifications.
-But what we want are dynamics; because we're in a dynamic language (in particular a LISP) and because we want extensibility as a modular system API, this won't cut it for us.
-
-So how can we get partitionability, reasonability, predictability and modularity?
-Perhaps via some layering of hierarchical structure which takes care of a top level partitioning?
-How do you maintain flexilibity here?
-Can we extend the notion of the protocol to itself be more dynamic and flexible in a way which ensures semantic clarity?
-I don't know; right now it's just an idea worth exploring.
-
-
-### A practical and motivating example
-
-Right now I'm working on _datview_, a pattern for describing UI as Datomic data.
-
-The idea behind datview is that we should be able to add metadata to our Datomic database schema which instructs the semi-automated construction of UI from this data.
-By describing things like which entities should relate to which entities via what relationships, we can dynamically generate (e.g.) forms based on this data, together with the raw shape of the data as it exists.
-
-The problem and blessing is that Datomic data is extremely extensible, flexible and open.
-There _are no_ entity types.
-And entities can have _whatever attributes_ we give them.
-While this enables a great deal of flexibility, it also provides us with a challenge matching the problem statement above.
-
-How can datview describe mappings from Datomic data to UI DOM (hiccup data, whatevs) flexibly, so that these tools aren't just disposable scaffolding, but a truly flexible, modular and extensible rendering framework that can span the life of an application?
-
-This is the problem I'm trying to solve with Dynamatch.
-
-<br/>
-
-
-## Current solution
-
-This library is an attempt to solve this problem with pattern matching, while considering how we can mitigate the semantic challenges this imposes on the systems we describe in this manner.
-
-We present the following features:
-
-* `defun`: Create a var referencing a `MatchFn` function object defined by pattern matching dispatch a la the `defun` library.
-* `addmatches!` and `addmatch!`: Add matches to an existing `MatchFn`, with semantics for adding to the beginning, or end of the match/clause matrix.
-* `update-clauses`: Low level ability to atomically update the match/clause matrix via an arbitrary update function mapping the existing clause matrix to some new clause matrix.
-* `merge-funs` (soon): Take two `MatchFn` functions and merge their clauses.
-
-To deal with the semantic complexity arising from clause-order dependence, we specifically have the following:
-
-* (soon) Match clauses (which take the form `([& pattern] & forms)`) can accept metadata with particular note being paid to the `:dynamatch/ident` attribute, which can be used to refer to a specific clause programmatically.
-* (soon) Re-valuation of impure macros `defun`, `addmatches` and `addmatch!` update in-place the corresponding clauses (by `:dynamatch/ident`).
-* (soon) Each block of clauses added via `addmatches` should behave as a contiguous submatrix of the overall matrix, and has an explicit ordering in relation to the other submatrices, which, once set remains fixed upon form re-evaluation, but can be inspected and updated.
-* (soon) Special treatment of defaults (mappings with `:dynamatch/ident :dynamatch/default`), such that adding to the end of a match function adds just before the `:default`.
-    * We could even catch some class of patterns that we know statically will match all values and prevent them from being assigned when there is a default
-
-One nice feature here is that order _within_ submatrices becomes static, and due to fixed order of submatrices relative to each other, their re-evaluation is idempotent.
-This resolves many of the issues around order based semantics
-This means we can start to leverage the extensibility of pattern matching in a more dynamic setting.
-
-There is still of course inherent complexity in the language of pattern matching as far as order goes.
-It can be difficult to fully reason about the interrelation and behavior of an ordering of pattern submatrices.
-And there is still work in safely, sanely and repeatable specifying the order of matches.
-But this may be worth the price when extensible dispatching is needed, and this complexity may be unavoidable in meeting the problem in general.
-(I'd like to think more about the space of other possible solutions eventually...)
-
-<br/>
-
-
-## Problems
-
-How do clauses with the same ident in two different submatrices interact?
-Should they be dealt with in their appropriate submatrices?
-Error?
-What is the behavior here?
-
-
-## Is this a good solution?
-
-I don't know.
-Maybe not.
-But I _do_ think it's a good _problem_, even if there isn't a good answer.
-This is the best solution I've come up with.
-Please share your thoughts and critiques.
-
-<br/>
-
-
-## Current status
-
-Clojurescript support is currently broken till I fix the macro layout to be cljs compatible.
-We also haven't yet implemented the matchset or clause idents and corresponding in place updates.
+Dynamatch addresses these challenges by enforcing a certain structure in our ordering of match clauses such that many of the incidental complexities of order dependence in a dynamically extensible pattern matching system become more manageable.
 
 <br/>
 
 
 ## Usage
 
-For detailed help with the pattern matching, please refer to the [core.match overview](https://github.com/clojure/core.match/wiki/Overview).
-The README for [defun](https://github.com/killme2008/defun) may also be of value, as this library is a fork thereof.
-Dynamatch supports all of the defun API, except for `defn-` and `letfn` (but we plan to implement these soon), so you should be able to use dynamatch as a near- drop-in replacement.
+This library intends to be feature complete and more or less interchangeable with [defun](https://github.com/killme2008/defun), from which it was forked.
+In particular, we presently have implemented extensible versions of `fun` and `defun` (but not yet `letfun` or `defun-`).
+Patterns are compiled using [core.match](https://github.com/clojure/core.match), and we offer its full expressiveness.
 
-### Defining functions
+We organize our match clauses as `MatchFn` objects, which implement the `IFn` protocol.
+These objects also implement some protocols which allow us to manipulate and recompile the clause stack into a callable function.
 
-more coming soon...
+In this setting, `fun` returns a `MatchFn` object while `defun` creates or updates a var pointing to a `MatchFn`.
+
+Let's walk through a use case:
+
+### Defining a match function
+
+Let's start by defining a function & var using `defun`.
+
+```clojure
+(require '[dynamatch :refer :all])
+
+(defun greet
+  ([:bob] "Hey bob")
+  ([x] (str "Greetings, " x)))
+
+(greet :bob) ;; => "Hey bob"
+(greet "Joe") ;; => "Greetings, Joe"
+```
+
+That's it; this creates a `MatchFn` that computes the described clause stack.
+This macro should operate more or less as a drop in for `defn`, with the obvious addition of pattern matching semantics.
+The `fun` version works more or less the same, but like the analogous core `fn` form, directly returns a `MatchFn` value instead of creating a var.
+
+### Adding matches
+
+Suppose we now want to add some patterns to the top of this clause stack.
+
+We can use the `addmatches!` macro for this:
+
+```clojure
+(addmatches! greet :chef-matches {:before :beginning}
+  ([:emeril] "Love the zest")
+  ([:child] "First, we baste the chicken!"))
+```
+
+We call this sequence of matches a _match block_.
+
+There are two important things to notice here.
+
+#### Block idents
+
+The second argument to the macro is the `:chef-matches` keyword.
+This is an `:ident` key used by Dynamatch to keep track of your calls to `addmatches!`.
+When this form is re-evaluated, you will will be guaranteed that as long as this value remains constant, the _match block_ being added will remain contiguous within `greet`'s match ordering, and will retain its position relative to other match blocks.
+Thus, after initial `addmatches!` form compilation, we have the following:
+
+* We can re-evaluate any block, and nothing will change if the code hasn't changed
+* If we change one of these blocks and re-evaluate, all old clauses will be removed, and the corresponding new clauses put in their place
+* We can reorder clauses within a given block and these updates will not affect the ordering of blocks
+
+If you take a minute to think about a naive approach to adding matches to such a function without organizing them by named blocks, it should be pretty easy to see how challenging it would be to get the semantics listed above.
+It's our current hypothesis that this is the simplest approach towards resolving the issues 
+
+#### Position
+
+The third argument to the macro, `{:before :beginning}` indicates that this _match block_ should go at the beginning of the match stack being constructed, and thus have highest precedence.
+Omitting this options map is equivalent to setting the options to `{:after :end}`, which adds to the very end or bottom of the clause stack (lowest precedence).
+Lowest precedence is default because it offers the least surprise from the perspective of modularity.
+With it, we know that it's only ever possible to _add_ behavior to the system; no behavior will be modified (except perhaps from a default).
+This makes it easier to reason about match blocks as modular units, and should be taken into consideration when using Dynamatch.
+The multimethod pattern explicitly avoids these issues (as stated above), so extra care and thought is still required with matching.
+
+Eventually we'll also support specifying `:before` and `:after` with arbitrary block idents for more control over positioning.
+For greater clarity, we should also reserver `:beginning` and `:end` as options for a third `:at` option.
+
+#### Adding single matches
+
+It's also worth mentioning that there is a separate form for adding single matches to a match stack.
+
+```clojure
+(addmatch! greet :hendrix-match {:before :beginning}
+  [:hendrix] "Castles made of sand fall in the sea.")
+```
+
+This creates a match block with a single match clause in it.
+
+
+### Clause idents
+
+It's possible to specify idents not just for entire match blocks, but for individual match clauses as well.
+We can do this using metadata on the clauses:
+
+```clojure
+(addmatches! greet :chef-matches {:before :beginning}
+  ^{:ident :emeril-match}
+  ([:emeril] "Love the zest")
+  ^{:ident :julia-child-match}
+  ([:child] "First, we baste the chicken!"))
+```
+
+Why on earth would we want to do that?
+
+#### Overriding individual match clauses
+
+[Pending; WIP]
+
+By naming individual clauses, we have the ability to override their behavior individually.
+
+```clojure
+(setmatch! greet :emeril
+  ([:emeril] "Bam!"))
+```
+
+It's worth pointing out that adding a single match with `addmatch!` assigns the block ident as the single clause's ident as well, so it's possible to override such a match using the block's ident...
+
+
+### Default values
+
+Dynamatch supports the specification of a special `:default` clause which will always come at the very end of the compiled match stack.
+As such, to preserve the semantics of `:default`, it's recommended that you never define a clause that matches any input pattern of permissible arity, unless that pattern is set as below:
+
+```clojure
+(set-default! greet
+  [& args] (str (apply str "Who is this " args) "?"))
+```
+
+Eventually, we may analyze match patterns added to ensure none are implied by the default match pattern.
+
+### Inspecting the match stack and match blocks
+
+We offer the `print-blocks` (soon to be; `print-contigs` currently) function/macro for printing out the stacks 
+This gives you something like this:
+
+```
+(print-blocks greet)
+;; :hendrix-match
+;;    :hendrix-match [:hendrix]
+;; :chef-matches
+;;    :emeril-match [:emeril]
+;;    :julia-child-match [:child]
+;; :dynamatch/main
+;;    nil [:bob]
+;;    nil [x]
+```
+
+Still need to get this to display the default...
+
+Also note: The block initially defined with `defun` is assigned a `:dynamatch/main` ident.
+
+### Misc
+
+There is an `update-blocks` (currently `update-contigs`; to be changed soon) function which let's you specify an arbitrary function to be applied to the block stack of a `MatchFn` instance.
+We may add an `update-blocks!` function which applies this to our var.
+
+I've also thought it might be interesting to offer a `merge-funs` option that would effectively stack two functions on top of each other (preserving defaults).
+That's perhaps not that valuable though.
+
+`overmatch`
+
+Re-define a pattern match by turning it into it's own pattern match clause matrix?
+What about redefine semantics of the form that initially created the ident though?
+Maybe this doesn't make sense... but seems there's something here.
+
+`matchbind`
+
+It should be possible to create a lexical scope where a dynamic matchfn has been overridden.
+
+<br/>
+
+
+
+## Clojurescript support...
+
+This is coming soon.
+
+I wanted for the Clojure implementation of this to be fully dynamic, and so used `eval` to dynamically compile functions based on the compiled code produced by `core.match`.
+Of course, Clojurescript does not have `eval`...
+So I'm quite certain we won't be able to get the full dynamism we have with the Clojure version.
+
+But this is probably okay.
+We should be able to get a static projection of the extension semantics.
+In particular, we can still have variants of `fun`, `defun`, `addmatches!`, `addmatch!`, `set-default!`, etc.
+But the dynamic functionality (`addmatches`, `addmatch`, `set-default`, `update-args`, etc.) will not be supported.
+
+How do we do this?
+We should be able to use the compile time var metadata features of the ClojureScript compiler (described in [What's in a Var](http://swannodette.github.io/2014/12/17/whats-in-a-var/), by David Nolen) to build up the match stacks statically via `defun`, `addmatches!`, etc.
+
+Right now though, I'm still trying to wrap my head around how to restructure code for the macro separation required by ClojureScript.
+Once that's done, I'll start figuring out how to get the support for the compile time extensibility.
+
+Another possibility... we may be able to fudge some of the dynamic features in cljs by "pretending", and not actually recompiling a new clause stack, but just keeping track of fns defined at compile time for each block, and using a dynamic compose function to give something with functional equivalence, which executes less efficiently (in general), due to the inability to optimize the entire match matrix.
+Something to think about.
 
 <br/>
 
 
 ## Ideas for the future
 
-### `overmatch`
+### Misc todo
 
-Re-define a pattern match by turning it into it's own pattern match clause matrix?
-What about redefine semantics of the form that initially created the ident though?
-Maybe this doesn't make sense... but seems there's something here.
-
-### `matchbind`
-
-It should be possible to create a lexical scope where a dynamic matchfn has been overridden.
-This would make it possible to do specialized scope where a certain class of data behaves in a certain customized way.
+* Make it so that catch-alls are caught and only allowed as the actual :default clause
+* Get defn- and letfn working
+* Should be :at :bottom, :at :top or :before vs :after existing block ident
+* Reorganize to work with cljs
+* Make it possible to update a specific clause
 
 </br>
+
 
 
 ## Contributors
