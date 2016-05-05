@@ -279,6 +279,13 @@
    (compiled-clauses (gensym "some-random-matchfn") clauses))
   ([fn-name clauses]
    (let [args-sym (gensym "args")
+         ;; Fix recursion so all fns are always single vector arg
+         clauses (postwalk
+                   (fn [form]
+                     (if (and (list? form) (= 'recur (first form)))
+                       (list 'recur (cons 'vector (next form)))
+                       form))
+                   clauses)
          compiled-expr (core.match/clj-form
                          [[::compile-token]]
                          (mapcat (fn [[pattern & match]]
@@ -358,22 +365,35 @@
                                     (first sigs)
                                     " should be a vector")
                                (str "Parameter declaration missing"))))))
-            orig-sigs sigs
-            sigs (postwalk
-                  (fn [form]
-                    (if (and (list? form) (= 'recur (first form)))
-                      (list 'recur (cons 'vector (next form)))
-                      form))
-                  sigs)
+            ;orig-sigs sigs
+            ;sigs (postwalk
+                  ;(fn [form]
+                    ;(if (and (list? form) (= 'recur (first form)))
+                      ;(list 'recur (cons 'vector (next form)))
+                      ;form))
+                  ;sigs)
             ;; Fixing the metadata... I think the postwalk mucks this up; not sure why I need first below
             ;; though... Was wrapping in an extra list form without...
-            sigs (first (map (fn [sig orig-sig] (with-meta sig (meta orig-sig)) sigs orig-sigs) sigs orig-sigs))
+            ;sigs (first (map (fn [sig orig-sig] (with-meta sig (meta orig-sig)) sigs orig-sig) sigs orig-sigs))
+            ;sigs (map (fn [sig orig-sig] (with-meta sig (meta orig-sig)) sigs orig-sig) sigs orig-sigs)
             ;; XXX Should add explicit syntax for some default clause
             form `(new-match-fn '~(or name (gensym "fun")) [{:ident :dynamatch/main :clauses '~sigs}])]
         form)))
 
 
+
 (comment
+  (clojure.pprint/pprint
+    (macroexpand-1
+      '(fun accum
+         ([0 ret] ret)
+         ([n ret] (recur (dec n) (+ n ret)))
+         ([n] (recur n 0)))))
+  (defun accum
+    ([0 ret] ret)
+    ([n ret] (recur (dec n) (+ n ret)))
+    ([n] (recur n 0)))
+  (accum 3)
   ((fun testerer ^{:this :that} ([x] (* x 3))) 5)
   (print-contigs (fun testerer ^{:ident :this} ([x] (* x 3)))))
 
